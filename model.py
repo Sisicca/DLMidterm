@@ -2,33 +2,87 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+class AlexNet(nn.Module):
+    def __init__(self, num_classes=101):
+        """
+        AlexNet模型
+        
+        参数:
+            num_classes: 类别数量
+        """
+        super(AlexNet, self).__init__()
+        
+        # 特征提取层
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        
+        # 分类器层
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
+        
+        # 初始化权重
+        self._initialize_weights()
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+    
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
 def create_alexnet_model(num_classes=101, pretrained=True):
     """
     创建AlexNet模型
     
     参数:
-        num_classes (int): 类别数量
-        pretrained (bool): 是否使用预训练权重
-        
+        num_classes: 类别数量
+        pretrained: 是否使用预训练权重
+    
     返回:
-        model: 修改后的AlexNet模型
+        model: AlexNet模型
     """
     if pretrained:
         # 加载预训练的AlexNet模型
         model = models.alexnet(pretrained=True)
-        print("加载预训练的AlexNet模型")
         
-        # 冻结所有参数（用于微调阶段）
-        for param in model.parameters():
-            param.requires_grad = False
+        # 修改最后一层以适应新的类别数量
+        model.classifier[6] = nn.Linear(4096, num_classes)
     else:
-        # 从头开始训练的AlexNet模型
-        model = models.alexnet(pretrained=False)
-        print("创建未预训练的AlexNet模型")
-    
-    # 修改最后一个全连接层以适应Caltech-101数据集
-    in_features = model.classifier[6].in_features
-    model.classifier[6] = nn.Linear(in_features, num_classes)
+        # 创建新的AlexNet模型
+        model = AlexNet(num_classes=num_classes)
     
     return model
 

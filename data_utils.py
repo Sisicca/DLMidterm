@@ -1,114 +1,150 @@
 import os
 import torch
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, random_split
+import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-import torchvision.datasets as datasets
-from sklearn.model_selection import train_test_split
-import glob
-
-class Caltech101Dataset(Dataset):
-    def __init__(self, root_dir, split='train', transform=None, test_ratio=0.2, random_state=42):
-        """
-        Caltech-101 数据集加载器
-        
-        参数:
-            root_dir (string): 数据集根目录
-            split (string): 'train' 或 'test'
-            transform (callable, optional): 样本转换
-            test_ratio (float): 测试集比例
-            random_state (int): 随机种子
-        """
-        self.root_dir = root_dir
-        self.transform = transform
-        self.classes = sorted([d for d in os.listdir(root_dir) 
-                              if os.path.isdir(os.path.join(root_dir, d)) and not d.startswith('.')])
-        
-        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(self.classes)}
-        
-        # 收集所有图像文件路径和标签
-        self.samples = []
-        for class_name in self.classes:
-            class_dir = os.path.join(root_dir, class_name)
-            for img_path in glob.glob(os.path.join(class_dir, '*.jpg')):
-                self.samples.append((img_path, self.class_to_idx[class_name]))
-        
-        # 划分训练集和测试集
-        train_samples, test_samples = train_test_split(
-            self.samples, test_size=test_ratio, random_state=random_state, stratify=[s[1] for s in self.samples]
-        )
-        
-        self.samples = train_samples if split == 'train' else test_samples
-    
-    def __len__(self):
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        img_path, label = self.samples[idx]
-        image = Image.open(img_path).convert('RGB')
-        
-        if self.transform:
-            image = self.transform(image)
-        
-        return image, label
 
 def get_data_transforms():
     """
-    获取数据预处理转换
-    
-    返回:
-        transform_train: 训练集转换
-        transform_test: 测试集转换
+    获取数据转换
     """
-    # AlexNet 输入尺寸为 224x224
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                    std=[0.229, 0.224, 0.225])
-    
-    transform_train = transforms.Compose([
-        transforms.Resize(256),
-        transforms.RandomResizedCrop(224),
+    # 训练集转换
+    train_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
-        normalize,
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-    transform_test = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+    # 验证集转换
+    val_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        normalize,
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-    return transform_train, transform_test
+    return train_transform, val_transform
 
-def get_data_loaders(data_dir, batch_size=32, num_workers=4):
+def load_caltech101_data(batch_size=32, num_workers=4, data_dir='data'):
     """
-    创建数据加载器
+    加载Caltech-101数据集
     
     参数:
-        data_dir (string): 数据集目录
-        batch_size (int): 批次大小
-        num_workers (int): 数据加载线程数
-        
+        batch_size: 批次大小
+        num_workers: 数据加载的工作进程数
+        data_dir: 数据目录
+    
     返回:
-        train_loader: 训练集数据加载器
-        val_loader: 验证集数据加载器
-        num_classes: 类别数量
+        train_loader: 训练数据加载器
+        val_loader: 验证数据加载器
+        test_loader: 测试数据加载器
+        class_names: 类别名称列表
     """
-    transform_train, transform_test = get_data_transforms()
+    # 获取数据转换
+    train_transform, val_transform = get_data_transforms()
     
-    train_dataset = Caltech101Dataset(data_dir, 'train', transform_train)
-    test_dataset = Caltech101Dataset(data_dir, 'test', transform_test)
+    # 下载并加载数据集
+    dataset = datasets.Caltech101(
+        root=data_dir,
+        download=True,
+        transform=train_transform
+    )
     
+    # 获取类别名称
+    class_names = dataset.categories
+    
+    # 计算数据集大小
+    total_size = len(dataset)
+    train_size = int(0.7 * total_size)
+    val_size = int(0.15 * total_size)
+    test_size = total_size - train_size - val_size
+    
+    # 随机分割数据集
+    train_dataset, val_dataset, test_dataset = random_split(
+        dataset, 
+        [train_size, val_size, test_size],
+        generator=torch.Generator().manual_seed(42)
+    )
+    
+    # 为验证集和测试集设置不同的转换
+    val_dataset.dataset.transform = val_transform
+    test_dataset.dataset.transform = val_transform
+    
+    # 创建数据加载器
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=True
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
     )
     
     test_loader = DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=True
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
     )
     
-    return train_loader, test_loader, len(train_dataset.classes) 
+    return train_loader, val_loader, test_loader, class_names
+
+def visualize_batch(images, labels, class_names, num_images=8):
+    """
+    可视化一个批次的数据
+    
+    参数:
+        images: 图像张量
+        labels: 标签张量
+        class_names: 类别名称列表
+        num_images: 要显示的图像数量
+    """
+    # 将图像转换为numpy数组
+    images = images.cpu().numpy()
+    labels = labels.cpu().numpy()
+    
+    # 反归一化
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    images = std * images.transpose(0, 2, 3, 1) + mean
+    images = np.clip(images, 0, 1)
+    
+    # 创建图像网格
+    fig, axes = plt.subplots(2, 4, figsize=(15, 8))
+    axes = axes.ravel()
+    
+    for i in range(min(num_images, len(images))):
+        axes[i].imshow(images[i])
+        axes[i].set_title(class_names[labels[i]])
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+def get_class_distribution(dataset):
+    """
+    获取数据集的类别分布
+    
+    参数:
+        dataset: 数据集
+    
+    返回:
+        class_counts: 类别计数字典
+    """
+    class_counts = {}
+    for _, label in dataset:
+        if label not in class_counts:
+            class_counts[label] = 0
+        class_counts[label] += 1
+    return class_counts 
