@@ -18,47 +18,60 @@
 - `visualize.py`: 可视化工具，包括TensorBoard集成
 - `main.py`: 主程序入口，整合所有模块
 
-## 环境要求
+## 环境管理
 
-- Python 3.6+
-- PyTorch 2.0.0+
-- torchvision 0.15.0+
-- 其他依赖见requirements.txt
+- 使用uv管理依赖
+- 其他依赖见pyproject.toml
+
+## 安装uv
+
+```bash
+pip install uv
+```
 
 ## 安装依赖
 
 ```bash
-pip install -r requirements.txt
+uv venv -p 3.10
+source .venv/bin/activate
+uv run hello.py
 ```
 
 ## 数据集
 
 项目使用Caltech-101数据集，已经下载并解压到`caltech-101`目录。
+数据集文件夹结构如下：
 
+```bash
+caltech-101/
+├── 101_ObjectCategories/
+├── Annotations/
+├── show_annotation.m
+```
 ## 运行说明
 
 ### 微调预训练模型
 
 ```bash
-python main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001
+uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001
 ```
 
 ### 从零开始训练模型
 
 ```bash
-python main.py --mode scratch --epochs 20 --batch_size 32 --lr 0.001
+uv run main.py --mode scratch --epochs 20 --batch_size 32 --lr 0.001
 ```
 
 ### 仅训练最后一层（特征提取）
 
 ```bash
-python main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --lr 0.001
+uv run main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --lr 0.001
 ```
 
 ### 评估模型
 
 ```bash
-python main.py --mode evaluate --model_path models/finetune_xxxx/finetune_best.pth
+uv run main.py --mode evaluate --model_path models/finetune_xxxx/finetune_best.pth
 ```
 
 ## 超参数调优
