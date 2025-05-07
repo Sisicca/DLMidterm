@@ -22,7 +22,7 @@ wheels/
 *.egg
 
 # 数据集
-data/
+caltech-101/
 
 # 模型和结果
 models/
@@ -40,4 +40,7 @@ runs/
 
 # 系统文件
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# 虚拟环境
+.venv/
