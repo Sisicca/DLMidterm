@@ -8,6 +8,8 @@
 - 使用预训练的AlexNet模型在Caltech-101数据集上进行微调
 - 与从头训练的模型进行对比，验证微调的有效性
 - 提供TensorBoard可视化支持，记录训练损失和准确率
+- 支持多种优化器和学习率调度策略
+- 提供高级可视化工具，如Grad-CAM热力图和特征图可视化
 
 ## 项目结构
 
@@ -15,7 +17,10 @@
 - `model.py`: AlexNet模型定义，支持预训练和从零训练
 - `train.py`: 训练和验证函数
 - `evaluate.py`: 模型评估和性能分析
-- `visualize.py`: 可视化工具，包括TensorBoard集成
+- `visualize.py`: 基础可视化工具，包括TensorBoard集成
+- `advanced_visualization.py`: 高级可视化工具，包括Grad-CAM和特征图可视化
+- `visualize_model.py`: 模型可视化脚本
+- `utils.py`: 工具函数，包括优化器和学习率调度器工厂
 - `main.py`: 主程序入口，整合所有模块
 
 ## 环境管理
@@ -74,15 +79,67 @@ uv run main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --l
 uv run main.py --mode evaluate --model_path models/finetune_xxxx/finetune_best.pth
 ```
 
-## 超参数调优
+## 优化器选择
 
-可以调整以下超参数以获得更好的性能：
+项目支持多种优化器，可以通过`--optimizer`参数选择：
 
-- `--batch_size`: 批处理大小，影响内存使用和训练速度
-- `--epochs`: 训练轮数，更多轮数可能获得更好性能
-- `--lr`: 学习率，控制参数更新步长
-- `--finetune_lr`: 微调学习率，控制预训练层的更新步长
-- `--feature_extract`: 是否只训练最后一层，可加快训练速度
+```bash
+uv run main.py --mode finetune --optimizer adam --lr 0.001
+```
+
+支持的优化器包括：
+- `sgd`: 随机梯度下降（默认带动量0.9）
+- `adam`: Adam优化器
+- `adamw`: AdamW优化器（带权重衰减）
+- `rmsprop`: RMSprop优化器
+- `adadelta`: Adadelta优化器
+- `adagrad`: Adagrad优化器
+
+## 学习率调度
+
+项目支持多种学习率调度策略，可以通过`--scheduler`参数选择：
+
+```bash
+uv run main.py --mode finetune --scheduler cosine_warmup --warmup_steps 500 --min_lr 1e-6
+```
+
+支持的调度器包括：
+- `constant`: 恒定学习率
+- `warmup`: 预热阶段
+- `linear_decay`: 线性衰减
+- `linear_warmup_decay`: 预热后线性衰减
+- `cosine`: 余弦衰减
+- `cosine_warmup`: 预热后余弦衰减
+- `step`: 步进式衰减
+- `reduce_on_plateau`: 当指标停止改善时降低学习率
+
+## 高级训练选项
+
+```bash
+# 使用梯度裁剪
+uv run main.py --mode finetune --grad_clip 1.0
+
+# 使用早停
+uv run main.py --mode finetune --early_stopping 5
+
+# 使用混合精度训练(可加速训练过程)
+uv run main.py --mode finetune --mixed_precision
+```
+
+## 高级可视化
+
+项目提供了高级可视化工具，帮助理解模型：
+
+```bash
+# 可视化单张图像的Grad-CAM热力图
+uv run visualize_model.py --model_path models/finetune_xxxx/finetune_best.pth --image_path path/to/image.jpg --mode gradcam
+
+# 可视化模型特征图
+uv run visualize_model.py --model_path models/finetune_xxxx/finetune_best.pth --mode features --target_layer features.10
+
+# 可视化数据集中多张图像的模型激活
+uv run visualize_model.py --model_path models/finetune_xxxx/finetune_best.pth --mode activations --num_images 4
+```
 
 ## 结果可视化
 
@@ -90,7 +147,9 @@ uv run main.py --mode evaluate --model_path models/finetune_xxxx/finetune_best.p
 
 1. 训练和验证损失
 2. 训练和验证准确率
-3. 模型预测可视化
+3. 学习率变化
+4. 梯度范数
+5. 模型预测可视化
 
 可以使用以下命令查看TensorBoard：
 

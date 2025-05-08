@@ -14,10 +14,13 @@ from model import create_alexnet_model, get_parameter_groups
 from train import train_model, validate_model
 from evaluate import evaluate_model, plot_confusion_matrix, generate_classification_report, compare_models
 from visualize import show_batch, log_model_graph, visualize_model_predictions, log_images_to_tensorboard
+from utils import create_optimizer, create_scheduler, Logger
 
 def main():
     # 参数解析
     parser = argparse.ArgumentParser(description='AlexNet微调 - Caltech101分类')
+    
+    # 基础参数
     parser.add_argument('--mode', type=str, default='finetune', choices=['finetune', 'scratch', 'evaluate'],
                         help='运行模式: finetune, scratch, evaluate')
     parser.add_argument('--data_dir', type=str, default='caltech-101/101_ObjectCategories',
@@ -26,16 +29,52 @@ def main():
                         help='批处理大小')
     parser.add_argument('--epochs', type=int, default=20,
                         help='训练轮数')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='随机种子')
+    parser.add_argument('--feature_extract', action='store_true',
+                        help='仅训练最后一层')
+    parser.add_argument('--model_path', type=str, default=None,
+                        help='模型路径，用于评估模式')
+                        
+    # 优化器参数
+    parser.add_argument('--optimizer', type=str, default='adam', 
+                        choices=['sgd', 'adam', 'adamw', 'rmsprop', 'adadelta', 'adagrad'],
+                        help='优化器选择')
     parser.add_argument('--lr', type=float, default=0.001,
                         help='学习率')
     parser.add_argument('--finetune_lr', type=float, default=0.0001,
                         help='微调学习率')
-    parser.add_argument('--model_path', type=str, default=None,
-                        help='模型路径，用于评估模式')
-    parser.add_argument('--feature_extract', action='store_true',
-                        help='仅训练最后一层')
-    parser.add_argument('--seed', type=int, default=42,
-                        help='随机种子')
+    parser.add_argument('--weight_decay', type=float, default=0.0001,
+                        help='权重衰减')
+    
+    # 学习率调度参数
+    parser.add_argument('--scheduler', type=str, default=None, 
+                        choices=['constant', 'warmup', 'linear_decay', 'linear_warmup_decay', 
+                                'cosine', 'cosine_warmup', 'step', 'reduce_on_plateau'],
+                        help='学习率调度器选择')
+    parser.add_argument('--warmup_steps', type=int, default=0,
+                        help='预热步数')
+    parser.add_argument('--min_lr', type=float, default=1e-6,
+                        help='最小学习率')
+    parser.add_argument('--patience', type=int, default=5,
+                        help='学习率下降前等待的轮数（用于reduce_on_plateau）')
+    
+    # 训练高级参数
+    parser.add_argument('--grad_clip', type=float, default=None,
+                        help='梯度裁剪阈值')
+    parser.add_argument('--early_stopping', type=int, default=None,
+                        help='早停轮数')
+    parser.add_argument('--mixed_precision', action='store_true',
+                        help='使用混合精度训练')
+    
+    # 日志参数
+    parser.add_argument('--log_level', type=str, default='info',
+                        choices=['debug', 'info', 'warning', 'error'],
+                        help='日志级别')
+    parser.add_argument('--log_frequency', type=int, default=10,
+                        help='日志打印频率（每N个批次）')
+    parser.add_argument('--save_frequency', type=int, default=1,
+                        help='模型保存频率（每N个epoch）')
     
     args = parser.parse_args()
     
@@ -47,22 +86,7 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"使用设备: {device}")
     
-    # 加载数据
-    print(f"加载Caltech-101数据集...")
-    train_loader, val_loader, class_to_idx = load_caltech101_data(
-        data_dir=args.data_dir,
-        batch_size=args.batch_size
-    )
-    
-    # 获取类别数量和类别名称
-    num_classes = get_num_classes(args.data_dir)
-    print(f"类别数量: {num_classes}")
-    
-    # 创建类别名称映射
-    idx_to_class = {v: k for k, v in class_to_idx.items()}
-    class_names = [idx_to_class[i] for i in range(len(idx_to_class))]
-    
-    # 创建结果目录
+    # 创建日志文件夹
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = os.path.join('results', f'{args.mode}_{timestamp}')
     models_dir = os.path.join('models', f'{args.mode}_{timestamp}')
@@ -70,6 +94,31 @@ def main():
     
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # 创建日志记录器
+    logger = Logger(log_level=args.log_level, log_file=os.path.join(log_dir, 'main.log'))
+    logger.info("=" * 50)
+    logger.info(f"开始实验: {args.mode} - {timestamp}")
+    logger.info("=" * 50)
+    logger.info(f"参数配置:")
+    for arg in vars(args):
+        logger.info(f"  {arg}: {getattr(args, arg)}")
+    
+    # 加载数据
+    logger.info(f"加载Caltech-101数据集...")
+    train_loader, val_loader, class_to_idx = load_caltech101_data(
+        data_dir=args.data_dir,
+        batch_size=args.batch_size
+    )
+    
+    # 获取类别数量和类别名称
+    num_classes = get_num_classes(args.data_dir)
+    logger.info(f"类别数量: {num_classes}")
+    
+    # 创建类别名称映射
+    idx_to_class = {v: k for k, v in class_to_idx.items()}
+    class_names = [idx_to_class[i] for i in range(len(idx_to_class))]
     
     if args.mode == 'finetune' or args.mode == 'scratch':
         # 创建模型
@@ -89,7 +138,28 @@ def main():
         )
         
         # 创建优化器
-        optimizer = optim.Adam(params_to_update)
+        optimizer = create_optimizer(
+            args.optimizer, 
+            params_to_update, 
+            lr=args.lr, 
+            weight_decay=args.weight_decay
+        )
+        
+        # 计算每个epoch的步数
+        steps_per_epoch = len(train_loader)
+        
+        # 创建学习率调度器
+        scheduler = None
+        if args.scheduler:
+            scheduler = create_scheduler(
+                args.scheduler,
+                optimizer,
+                args.epochs,
+                steps_per_epoch,
+                warmup_steps=args.warmup_steps,
+                min_lr=args.min_lr,
+                patience=args.patience
+            )
         
         # 显示数据样本
         show_batch(
@@ -98,11 +168,8 @@ def main():
             save_path=os.path.join(results_dir, 'data_samples.png')
         )
         
-        # 记录模型图到TensorBoard
-        # log_model_graph(model, train_loader, log_dir)
-        
         # 训练模型
-        print(f"开始训练模型...")
+        logger.info(f"开始训练模型...")
         model = train_model(
             model=model,
             train_loader=train_loader,
@@ -113,14 +180,20 @@ def main():
             device=device,
             model_save_path=models_dir,
             log_dir=log_dir,
-            model_name=args.mode
+            model_name=args.mode,
+            scheduler=scheduler,
+            log_frequency=args.log_frequency,
+            grad_clip=args.grad_clip,
+            save_frequency=args.save_frequency,
+            mixed_precision=args.mixed_precision,
+            early_stopping=args.early_stopping
         )
         
         # 保存最终模型
         torch.save(model.state_dict(), os.path.join(models_dir, f'{args.mode}_final.pth'))
         
         # 评估最终模型
-        print(f"评估最终模型...")
+        logger.info(f"评估最终模型...")
         loss, accuracy, all_preds, all_labels = evaluate_model(
             model=model,
             val_loader=val_loader,
@@ -137,12 +210,16 @@ def main():
             f.write(f"类别数量: {num_classes}\n")
             f.write(f"批处理大小: {args.batch_size}\n")
             f.write(f"训练轮数: {args.epochs}\n")
+            f.write(f"优化器: {args.optimizer}\n")
             f.write(f"学习率: {args.lr}\n")
             f.write(f"微调学习率: {args.finetune_lr}\n")
+            f.write(f"权重衰减: {args.weight_decay}\n")
+            f.write(f"学习率调度器: {args.scheduler}\n")
             f.write(f"仅训练最后一层: {args.feature_extract}\n")
+            f.write(f"混合精度训练: {args.mixed_precision}\n")
         
         # 绘制混淆矩阵
-        print(f"绘制混淆矩阵...")
+        logger.info(f"绘制混淆矩阵...")
         plot_confusion_matrix(
             true_labels=all_labels,
             predictions=all_preds,
@@ -151,7 +228,7 @@ def main():
         )
         
         # 生成分类报告
-        print(f"生成分类报告...")
+        logger.info(f"生成分类报告...")
         generate_classification_report(
             true_labels=all_labels,
             predictions=all_preds,
@@ -160,7 +237,7 @@ def main():
         )
         
         # 可视化模型预测
-        print(f"可视化模型预测...")
+        logger.info(f"可视化模型预测...")
         visualize_model_predictions(
             model=model,
             dataloader=val_loader,
@@ -172,7 +249,7 @@ def main():
     elif args.mode == 'evaluate':
         # 检查模型路径
         if args.model_path is None or not os.path.exists(args.model_path):
-            print(f"错误: 请提供有效的模型路径")
+            logger.error(f"错误: 请提供有效的模型路径")
             return
         
         # 创建模型
@@ -184,7 +261,7 @@ def main():
         criterion = nn.CrossEntropyLoss()
         
         # 评估模型
-        print(f"评估模型: {args.model_path}")
+        logger.info(f"评估模型: {args.model_path}")
         loss, accuracy, all_preds, all_labels = evaluate_model(
             model=model,
             val_loader=val_loader,
@@ -215,7 +292,7 @@ def main():
             save_path=os.path.join(results_dir, 'classification_report.txt')
         )
     
-    print(f"完成! 结果保存在: {results_dir}")
+    logger.info(f"完成! 结果保存在: {results_dir}")
 
 if __name__ == "__main__":
     main() 
