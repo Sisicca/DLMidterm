@@ -10,17 +10,19 @@
 - 提供TensorBoard可视化支持，记录训练损失和准确率
 - 支持多种优化器和学习率调度策略
 - 提供高级可视化工具，如Grad-CAM热力图和特征图可视化
+- 支持TensorBoard图表导出和错误分类分析
 
 ## 项目结构
 
 - `data_utils.py`: 数据集加载和预处理，包括数据增强和标准化
 - `model.py`: AlexNet模型定义，支持预训练和从零训练
 - `train.py`: 训练和验证函数
-- `evaluate.py`: 模型评估和性能分析
+- `evaluate.py`: 模型评估和性能分析，包括错误分类分析
 - `visualize.py`: 基础可视化工具，包括TensorBoard集成
 - `advanced_visualization.py`: 高级可视化工具，包括Grad-CAM和特征图可视化
 - `visualize_model.py`: 模型可视化脚本
 - `utils.py`: 工具函数，包括优化器和学习率调度器工厂
+- `tensorboard_exporter.py`: TensorBoard图表导出工具
 - `main.py`: 主程序入口，整合所有模块
 
 ## 环境管理
@@ -79,6 +81,16 @@ uv run main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --l
 uv run main.py --mode evaluate --model_path models/finetune_xxxx/finetune_best.pth
 ```
 
+### 启动TensorBoard或导出TensorBoard图表
+
+```bash
+# 启动TensorBoard服务
+uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx
+
+# 导出TensorBoard图表为PNG格式
+uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx --export_dir results/exported_charts
+```
+
 ## 优化器选择
 
 项目支持多种优化器，可以通过`--optimizer`参数选择：
@@ -126,6 +138,19 @@ uv run main.py --mode finetune --early_stopping 5
 uv run main.py --mode finetune --mixed_precision
 ```
 
+## 可视化配置选项
+
+```bash
+# 自定义混淆矩阵显示
+uv run main.py --mode finetune --normalize_cm --max_classes 30
+
+# 不使用归一化混淆矩阵
+uv run main.py --mode finetune --normalize_cm=False
+
+# 修改默认TensorBoard端口
+uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx --tensorboard_port 8080
+```
+
 ## 高级可视化
 
 项目提供了高级可视化工具，帮助理解模型：
@@ -157,6 +182,12 @@ uv run visualize_model.py --model_path models/finetune_xxxx/finetune_best.pth --
 tensorboard --logdir=runs
 ```
 
+或者使用内置的TensorBoard模式：
+
+```bash
+uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx
+```
+
 ## 模型保存
 
 模型会保存在`models`目录下，包括：
@@ -169,7 +200,9 @@ tensorboard --logdir=runs
 
 训练完成后，会在`results`目录下生成以下文件：
 
-- 混淆矩阵
-- 分类报告
+- 混淆矩阵（支持归一化和类别数量限制）
+- 分类报告（详细的性能指标）
 - 模型预测可视化
-- 训练信息汇总 
+- 错误分类分析（展示最常见的错误分类对）
+- 训练信息汇总
+- TensorBoard图表导出（如学习率变化、损失曲线等） 

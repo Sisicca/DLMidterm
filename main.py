@@ -8,21 +8,67 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from datetime import datetime
+import subprocess
 
 from data_utils import load_caltech101_data, get_num_classes
 from model import create_alexnet_model, get_parameter_groups
 from train import train_model, validate_model
-from evaluate import evaluate_model, plot_confusion_matrix, generate_classification_report, compare_models
+from evaluate import evaluate_model, plot_confusion_matrix, generate_classification_report, compare_models, plot_top_misclassifications
 from visualize import show_batch, log_model_graph, visualize_model_predictions, log_images_to_tensorboard
 from utils import create_optimizer, create_scheduler, Logger
+try:
+    from tensorboard_exporter import load_tensorboard_data, plot_training_curves
+    TENSORBOARD_EXPORTER_AVAILABLE = True
+except ImportError:
+    TENSORBOARD_EXPORTER_AVAILABLE = False
+
+def export_tensorboard_plots(log_dir, results_dir, logger):
+    """
+    导出TensorBoard图表到结果目录
+    
+    Args:
+        log_dir: TensorBoard日志目录
+        results_dir: 结果保存目录
+        logger: 日志记录器
+    """
+    if not TENSORBOARD_EXPORTER_AVAILABLE:
+        logger.warning("未找到tensorboard_exporter模块，无法导出TensorBoard图表")
+        logger.info("请运行 'uv run tensorboard_exporter.py --log_dir runs/xxxx --output_dir results/xxxx' 手动导出")
+        return
+    
+    try:
+        logger.info("导出TensorBoard图表...")
+        data = load_tensorboard_data(log_dir)
+        plot_training_curves(data, results_dir)
+        logger.info(f"TensorBoard图表已保存至: {results_dir}")
+    except Exception as e:
+        logger.error(f"导出TensorBoard图表失败: {e}")
+        logger.info("请运行 'uv run tensorboard_exporter.py --log_dir runs/xxxx --output_dir results/xxxx' 手动导出")
+    
+def open_tensorboard(log_dir, port=6006):
+    """
+    启动TensorBoard服务
+    
+    Args:
+        log_dir: TensorBoard日志目录
+        port: TensorBoard服务端口
+    
+    Returns:
+        进程对象
+    """
+    cmd = f"tensorboard --logdir={log_dir} --port={port}"
+    process = subprocess.Popen(cmd, shell=True)
+    print(f"TensorBoard已启动，请访问 http://localhost:{port}")
+    print(f"按Ctrl+C终止服务")
+    return process
 
 def main():
     # 参数解析
     parser = argparse.ArgumentParser(description='AlexNet微调 - Caltech101分类')
     
     # 基础参数
-    parser.add_argument('--mode', type=str, default='finetune', choices=['finetune', 'scratch', 'evaluate'],
-                        help='运行模式: finetune, scratch, evaluate')
+    parser.add_argument('--mode', type=str, default='finetune', choices=['finetune', 'scratch', 'evaluate', 'tensorboard'],
+                        help='运行模式: finetune, scratch, evaluate, tensorboard')
     parser.add_argument('--data_dir', type=str, default='caltech-101/101_ObjectCategories',
                         help='数据目录')
     parser.add_argument('--batch_size', type=int, default=32,
@@ -76,11 +122,53 @@ def main():
     parser.add_argument('--save_frequency', type=int, default=1,
                         help='模型保存频率（每N个epoch）')
     
+    # TensorBoard参数
+    parser.add_argument('--tensorboard_dir', type=str, default=None,
+                        help='TensorBoard日志目录，用于启动TensorBoard或导出图表')
+    parser.add_argument('--tensorboard_port', type=int, default=6006,
+                        help='TensorBoard服务端口')
+    parser.add_argument('--export_dir', type=str, default=None,
+                        help='TensorBoard图表导出目录')
+    
+    # 可视化参数
+    parser.add_argument('--normalize_cm', action='store_true', default=True,
+                        help='是否归一化混淆矩阵')
+    parser.add_argument('--max_classes', type=int, default=30,
+                        help='混淆矩阵显示的最大类别数量')
+    
     args = parser.parse_args()
     
     # 设置随机种子
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    
+    # TensorBoard模式
+    if args.mode == 'tensorboard':
+        if not args.tensorboard_dir:
+            print("错误: 请提供--tensorboard_dir参数")
+            return
+            
+        if args.export_dir:
+            # 导出TensorBoard图表
+            try:
+                from tensorboard_exporter import load_tensorboard_data, plot_training_curves
+                data = load_tensorboard_data(args.tensorboard_dir)
+                plot_training_curves(data, args.export_dir)
+                print(f"TensorBoard图表已导出至: {args.export_dir}")
+            except Exception as e:
+                print(f"导出TensorBoard图表失败: {e}")
+        else:
+            # 启动TensorBoard服务
+            process = open_tensorboard(args.tensorboard_dir, args.tensorboard_port)
+            try:
+                # 等待用户手动终止
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                process.terminate()
+                print("TensorBoard服务已终止")
+        
+        return
     
     # 检查GPU是否可用
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -223,8 +311,20 @@ def main():
         plot_confusion_matrix(
             true_labels=all_labels,
             predictions=all_preds,
-            class_names=class_names[:20],  # 只显示前20个类别
-            save_path=os.path.join(results_dir, 'confusion_matrix.png')
+            class_names=class_names,
+            save_path=os.path.join(results_dir, 'confusion_matrix.png'),
+            normalize=args.normalize_cm,
+            max_classes=args.max_classes
+        )
+        
+        # 绘制最常见的错误分类
+        logger.info(f"绘制错误分类分析...")
+        plot_top_misclassifications(
+            true_labels=all_labels,
+            predictions=all_preds,
+            class_names=class_names,
+            top_n=10,
+            save_path=os.path.join(results_dir, 'top_misclassifications.png')
         )
         
         # 生成分类报告
@@ -246,6 +346,9 @@ def main():
             save_path=os.path.join(results_dir, 'model_predictions.png')
         )
         
+        # 导出TensorBoard图表
+        export_tensorboard_plots(log_dir, results_dir, logger)
+        
     elif args.mode == 'evaluate':
         # 检查模型路径
         if args.model_path is None or not os.path.exists(args.model_path):
@@ -254,7 +357,7 @@ def main():
         
         # 创建模型
         model = create_alexnet_model(num_classes=num_classes)
-        model.load_state_dict(torch.load(args.model_path))
+        model.load_state_dict(torch.load(args.model_path, map_location=device))
         model = model.to(device)
         
         # 定义损失函数
@@ -280,8 +383,19 @@ def main():
         plot_confusion_matrix(
             true_labels=all_labels,
             predictions=all_preds,
-            class_names=class_names[:20],
-            save_path=os.path.join(results_dir, 'confusion_matrix.png')
+            class_names=class_names,
+            save_path=os.path.join(results_dir, 'confusion_matrix.png'),
+            normalize=args.normalize_cm,
+            max_classes=args.max_classes
+        )
+        
+        # 绘制最常见的错误分类
+        plot_top_misclassifications(
+            true_labels=all_labels,
+            predictions=all_preds,
+            class_names=class_names,
+            top_n=10,
+            save_path=os.path.join(results_dir, 'top_misclassifications.png')
         )
         
         # 生成分类报告
@@ -293,6 +407,8 @@ def main():
         )
     
     logger.info(f"完成! 结果保存在: {results_dir}")
+    logger.info(f"使用以下命令查看TensorBoard: tensorboard --logdir={log_dir}")
+    logger.info(f"或运行: uv run main.py --mode tensorboard --tensorboard_dir {log_dir}")
 
 if __name__ == "__main__":
     main() 
