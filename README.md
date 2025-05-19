@@ -60,7 +60,11 @@ caltech-101/
 ### 微调预训练模型
 
 ```bash
+# 基础微调命令
 uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001
+
+# 推荐的完整微调命令
+uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001 --optimizer adamw --weight_decay 0.0001 --scheduler cosine_warmup --warmup_steps 500 --save_frequency 5 --mixed_precision --early_stopping 5 --grad_clip 1.0
 ```
 
 ### 从零开始训练模型
@@ -192,9 +196,11 @@ uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx
 
 模型会保存在`models`目录下，包括：
 
-- 每个epoch的中间模型
-- 验证集上性能最好的模型
+- 验证集上性能最好的模型（始终保存）
+- 每隔一定epoch保存的检查点模型（可通过`--save_frequency`参数控制）
 - 最终模型
+
+默认情况下，每个epoch都会保存一个检查点（`--save_frequency 1`），这可能会占用大量磁盘空间。您可以通过设置`--save_frequency`参数来控制保存频率，例如`--save_frequency 5`表示每5个epoch保存一次模型。
 
 ## 结果分析
 
@@ -205,4 +211,4 @@ uv run main.py --mode tensorboard --tensorboard_dir runs/finetune_xxxx
 - 模型预测可视化
 - 错误分类分析（展示最常见的错误分类对）
 - 训练信息汇总
-- TensorBoard图表导出（如学习率变化、损失曲线等） 
+- TensorBoard图表导出（如学习率变化、损失曲线等）
