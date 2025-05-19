@@ -70,14 +70,37 @@ uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune
 ### 从零开始训练模型
 
 ```bash
+# 基础命令
 uv run main.py --mode scratch --epochs 20 --batch_size 32 --lr 0.001
+
+# 推荐的完整命令
+uv run main.py --mode scratch --epochs 50 --batch_size 32 --lr 0.01 --optimizer sgd --weight_decay 0.0005 --scheduler cosine --min_lr 1e-5 --save_frequency 10 --mixed_precision --early_stopping 8 --grad_clip 1.0
 ```
 
 ### 仅训练最后一层（特征提取）
 
 ```bash
+# 基础命令
 uv run main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --lr 0.001
+
+# 推荐的完整命令
+uv run main.py --mode finetune --feature_extract --epochs 30 --batch_size 64 --lr 0.005 --optimizer adam --weight_decay 0.00001 --scheduler step --step_size 10 --gamma 0.5 --save_frequency 5 --mixed_precision --early_stopping 5
 ```
+
+### 三种训练模式参数差异说明
+
+不同的训练模式（微调、从零训练和特征提取）需要不同的超参数设置，主要差异及原因如下：
+
+| 参数 | 微调模式 | 从零训练模式 | 特征提取模式 | 差异原因 |
+|------|---------|------------|--------------|---------|
+| 学习率 | 较小 (0.0001) | 较大 (0.01) | 中等 (0.005) | 微调时需要保留预训练知识，因此学习率较小；从零训练需要快速学习，学习率较大；特征提取只更新少量参数，可用中等学习率 |
+| 轮数 | 中等 (20轮) | 较多 (50轮) | 较少 (30轮) | 从零训练需要更多轮数来学习特征；微调已有良好特征，需中等轮数；特征提取只训练分类器，收敛较快 |
+| 优化器 | AdamW | SGD+动量 | Adam | 微调适合AdamW以控制权重变化；从零训练通常用SGD效果更好；特征提取参数少，Adam收敛快 |
+| 权重衰减 | 中等 (0.0001) | 较大 (0.0005) | 较小 (0.00001) | 从零训练容易过拟合，需较大正则化；特征提取参数少，需较小正则化；微调介于两者之间 |
+| 学习率调度 | 余弦预热 | 余弦退火 | 阶梯式下降 | 微调需预热以避免破坏原特征；从零训练适合余弦退火探索参数空间；特征提取用简单阶梯式即可 |
+| 批次大小 | 中等 (32) | 中等 (32) | 较大 (64) | 特征提取内存需求小，可用更大批次加速训练；其他模式保持平衡 |
+| 早停轮数 | 5 | 8 | 5 | 从零训练波动较大，需更长耐心；其他模式收敛更稳定 |
+| 保存频率 | 5 | 10 | 5 | 从零训练轮数多，可降低保存频率节省空间；其他模式轮数适中 |
 
 ### 评估模型
 
