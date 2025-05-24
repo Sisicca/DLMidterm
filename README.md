@@ -64,7 +64,7 @@ caltech-101/
 uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001
 
 # 推荐的完整微调命令
-uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune_lr 0.0001 --optimizer adamw --weight_decay 0.0001 --scheduler cosine_warmup --warmup_steps 500 --save_frequency 5 --mixed_precision --early_stopping 5 --grad_clip 1.0
+uv run main.py --mode finetune --epochs 30 --batch_size 32 --lr 0.001 --finetune_lr 0.0001 --optimizer adamw --weight_decay 0.0001 --scheduler cosine_warmup --warmup_steps 500 --save_frequency 10 --mixed_precision --early_stopping 5 --grad_clip 1.0
 ```
 
 ### 从零开始训练模型
@@ -74,7 +74,7 @@ uv run main.py --mode finetune --epochs 20 --batch_size 32 --lr 0.001 --finetune
 uv run main.py --mode scratch --epochs 20 --batch_size 32 --lr 0.001
 
 # 推荐的完整命令
-uv run main.py --mode scratch --epochs 50 --batch_size 32 --lr 0.01 --optimizer sgd --weight_decay 0.0005 --scheduler cosine --min_lr 1e-5 --save_frequency 10 --mixed_precision --early_stopping 8 --grad_clip 1.0
+uv run main.py --mode scratch --epochs 150 --batch_size 64 --lr 0.02 --optimizer adamw --weight_decay 0.001 --scheduler cosine --min_lr 1e-6 --save_frequency 20 --mixed_precision --early_stopping 20 --grad_clip 0.5
 ```
 
 ### 仅训练最后一层（特征提取）
@@ -84,7 +84,7 @@ uv run main.py --mode scratch --epochs 50 --batch_size 32 --lr 0.01 --optimizer 
 uv run main.py --mode finetune --feature_extract --epochs 20 --batch_size 32 --lr 0.001
 
 # 推荐的完整命令
-uv run main.py --mode finetune --feature_extract --epochs 30 --batch_size 64 --lr 0.005 --optimizer adam --weight_decay 0.00001 --scheduler step --step_size 10 --gamma 0.5 --save_frequency 5 --mixed_precision --early_stopping 5
+uv run main.py --mode finetune --feature_extract --epochs 30 --batch_size 32 --lr 0.001 --finetune_lr 0.0001 --optimizer adamw --weight_decay 0.0001 --scheduler cosine_warmup --warmup_steps 500 --save_frequency 10 --mixed_precision --early_stopping 5 --grad_clip 1.0
 ```
 
 ### 三种训练模式参数差异说明

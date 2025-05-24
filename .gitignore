@@ -28,6 +28,7 @@ caltech-101/
 models/
 results/
 runs/
+images/
 
 # Jupyter Notebook
 .ipynb_checkpoints
